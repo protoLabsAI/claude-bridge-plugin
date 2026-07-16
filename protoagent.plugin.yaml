@@ -1,0 +1,31 @@
+id: claude_bridge
+name: Claude Bridge (explore Claude Code state)
+version: 0.1.0
+description: >-
+  Read-only explore tools over Claude Code's on-disk state: per-project session
+  transcripts and persistent memory (~/.claude), ephemeral session scratchpads
+  (/private/tmp/claude-<uid>), and Cowork / desktop local-agent-mode sessions
+  (~/Library/Application Support/Claude). Resolves a directory to its Claude Code
+  project and surfaces memory, sessions, scratchpads, and the installed
+  skill/agent/plugin/MCP inventory. Translators (skills, subagents, MCP servers)
+  land in a later version. No network access; reads are fenced to the three store
+  roots plus well-known files (.claude/, CLAUDE.md, .mcp.json) under a directory
+  you name.
+enabled: false
+repository: https://github.com/protoLabsAI/claude-bridge-plugin
+min_protoagent_version: "0.100.0"
+
+config_section: claude_bridge
+config:
+  # Store roots. Empty scratchpad_root means the platform default
+  # (/private/tmp/claude-<uid> on macOS, /tmp/claude-<uid> elsewhere).
+  cli_root: "~/.claude"
+  scratchpad_root: ""
+  cowork_root: "~/Library/Application Support/Claude/local-agent-mode-sessions"
+  # Read caps so a huge transcript or artifact can't flood the context.
+  max_read_bytes: 65536
+  transcript_tail: 20
+
+capabilities:
+  network: []
+  filesystem: scoped
