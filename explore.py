@@ -38,6 +38,19 @@ def _mtime(path: Path) -> str:
         return "?"
 
 
+def _when(value) -> str:
+    """Render a timestamp that may be ISO text or epoch seconds/milliseconds."""
+    try:
+        from datetime import datetime
+
+        n = float(value)
+        if n > 1e12:
+            n /= 1000.0
+        return datetime.fromtimestamp(n).strftime("%Y-%m-%d %H:%M")
+    except (TypeError, ValueError, OSError):
+        return _snippet(str(value), 30)
+
+
 def _frontmatter(text: str) -> dict:
     """Best-effort YAML frontmatter parse; returns {} on any failure."""
     if not text.startswith("---"):
@@ -279,7 +292,7 @@ def build_explore_tools(cfg: dict) -> list:
                         continue
                     sid = sc.stem
                     rows.append(
-                        f"- {sid}  model={meta.get('model', '?')}  created={_snippet(str(meta.get('createdAt', '?')), 30)}"
+                        f"- {sid}  model={meta.get('model', '?')}  created={_when(meta.get('createdAt', '?'))}"
                         + ("  archived" if meta.get("isArchived") else "")
                         + f"\n    {_snippet(str(meta.get('initialMessage', '')), 120)}"
                     )
@@ -306,7 +319,11 @@ def build_explore_tools(cfg: dict) -> list:
                 "cliSessionId",
                 "initialMessage",
             ]
-            lines = [f"{k}: {_snippet(str(meta[k]), 160)}" for k in keep if k in meta]
+            lines = [
+                f"{k}: {_when(meta[k]) if k in ('createdAt', 'lastActivityAt') else _snippet(str(meta[k]), 160)}"
+                for k in keep
+                if k in meta
+            ]
             outputs = session_dir / "outputs"
             if outputs.is_dir():
                 files = [str(p.relative_to(session_dir)) for p in sorted(outputs.rglob("*")) if p.is_file()]
