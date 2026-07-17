@@ -17,6 +17,24 @@ accumulated state.
 | Scratchpads | `/private/tmp/claude-<uid>` | per-session working files (ephemeral, wiped on reboot) |
 | Cowork | `~/Library/Application Support/Claude/local-agent-mode-sessions` | desktop local-agent-mode sessions: metadata, `outputs/`, `uploads/`, `audit.jsonl` (transcripts stay in the sandbox VM) |
 
+## Import tools (v0.2 — translators)
+
+All importers are **dry-run by default** (`apply=True` writes, after the
+operator approves); existing material is never overwritten, and re-imports
+skip + report.
+
+- `claude_import_scan` — inventory everything importable (skills/commands/subagents/MCP/memory)
+- `claude_import_skills` — user-authored skills → protoAgent skills (same open SKILL.md standard; spec-normalized names, provenance metadata)
+- `claude_import_commands` — slash commands → `user_facing`/`slash` skills
+- `claude_import_subagents` — subagent markdown → `SubagentConfig` (tools mapped, unmapped flagged; model inherited)
+- `claude_import_mcp` — `mcpServers` configs → `mcp.servers` (replace-by-name merge)
+- `claude_import_memory` — project memory → knowledge domain `claude-import` (undo: `knowledge_purge('claude-import')`)
+- `claude_hooks_report` — hooks are **report-only** (protoAgent's equivalent is middleware)
+
+**License rule:** Anthropic-authored skills (Cowork `creatorType: anthropic`,
+or Anthropic license text in the skill dir) are always refused — their license
+prohibits redistribution. Only user-authored material migrates.
+
 ## Tools (v0.1 — explore, read-only)
 
 - `claude_projects` — list projects or resolve a directory to its project

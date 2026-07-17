@@ -1,6 +1,6 @@
 [project]
 name = "claude-bridge"
-version = "0.1.0"
+version = "0.2.0"
 description = "protoAgent plugin: read-only explore tools over Claude Code's on-disk state (CLI store, scratchpads, Cowork sessions), with artifact translators to follow."
 requires-python = ">=3.11"
 
@@ -10,6 +10,7 @@ requires-python = ">=3.11"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+asyncio_mode = "auto"
 
 [tool.ruff]
 line-length = 120

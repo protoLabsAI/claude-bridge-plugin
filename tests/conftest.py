@@ -126,6 +126,40 @@ def fake_home(tmp_path):
         )
     )
 
+    # v0.2 import sources: slash commands, subagents, MCP servers, and Cowork
+    # skills (one user-authored, one Anthropic-licensed that must be refused).
+    (cli / "commands").mkdir(exist_ok=True)
+    (cli / "commands" / "standup.md").write_text(
+        "---\ndescription: Structured progress report.\n---\n\nReport progress on $ARGUMENTS.\n"
+    )
+    (cli / "agents" / "reviewer.md").write_text(
+        "---\nname: reviewer\ndescription: Reviews changes.\ntools: Read, Grep, Bash, TodoWrite\nmodel: opus\n---\n\nYou review code changes carefully.\n"
+    )
+    settings = json.loads((cli / "settings.json").read_text())
+    settings["hooks"] = {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "echo hi"}]}]}
+    (cli / "settings.json").write_text(json.dumps(settings))
+
+    acct = cowork / "skills-plugin" / "org-uuid" / "acct-uuid"
+    (acct / "skills" / "my-writing-style").mkdir(parents=True)
+    (acct / "skills" / "my-writing-style" / "SKILL.md").write_text(
+        "---\nname: my-writing-style\ndescription: The operator's voice profile.\n---\n\nWrite tersely.\n"
+    )
+    (acct / "skills" / "docx").mkdir(parents=True)
+    (acct / "skills" / "docx" / "SKILL.md").write_text(
+        "---\nname: docx\ndescription: Word documents.\n---\n\nProprietary body.\n"
+    )
+    (acct / "skills" / "docx" / "LICENSE.txt").write_text("(c) 2025 Anthropic, PBC. All rights reserved.\n")
+    (acct / "manifest.json").write_text(
+        json.dumps(
+            {
+                "skills": [
+                    {"name": "my-writing-style", "creatorType": "user"},
+                    {"name": "docx", "creatorType": "anthropic"},
+                ]
+            }
+        )
+    )
+
     cfg = {
         "cli_root": str(cli),
         "scratchpad_root": str(scratch),

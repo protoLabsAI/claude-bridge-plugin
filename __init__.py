@@ -26,6 +26,22 @@ def register(registry) -> None:
         log.exception("[claude_bridge] registering explore tools failed")
 
     try:
+        from .tools_import import build_import_tools
+
+        registry.register_tools(build_import_tools(cfg))
+    except Exception:  # noqa: BLE001
+        log.exception("[claude_bridge] registering import tools failed")
+
+    try:
+        from .importer import register_imported_subagents
+
+        n = register_imported_subagents(registry, cfg)
+        if n:
+            log.info("[claude_bridge] registered %d imported subagent(s)", n)
+    except Exception:  # noqa: BLE001
+        log.exception("[claude_bridge] registering imported subagents failed")
+
+    try:
         registry.register_skill_dir("skills")
     except Exception:  # noqa: BLE001
         log.exception("[claude_bridge] registering skills failed")

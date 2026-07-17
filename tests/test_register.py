@@ -11,6 +11,13 @@ EXPECTED_TOOLS = {
     "claude_scratchpad",
     "claude_cowork",
     "claude_inventory",
+    "claude_import_scan",
+    "claude_import_skills",
+    "claude_import_commands",
+    "claude_import_subagents",
+    "claude_import_mcp",
+    "claude_import_memory",
+    "claude_hooks_report",
 }
 
 

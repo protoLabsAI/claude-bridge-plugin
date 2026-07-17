@@ -1,6 +1,6 @@
 ---
 name: claude-bridge
-description: Explore Claude Code's on-disk state — persistent memory, session transcripts, scratchpads, Cowork sessions, and installed skills/agents/plugins/MCP servers — for this machine or a specific directory. Use when asked what Claude Code knows/remembers about a project, to find a past Claude Code session or its outputs, or to inventory Claude Code customizations before migrating them to protoAgent.
+description: Explore Claude Code's on-disk state (memory, sessions, scratchpads, Cowork, installed customizations) AND import it — translate user-authored skills, slash commands, subagents, MCP servers, and project memory into this agent. Use when asked what Claude Code knows about a project, or to migrate/import Claude Code state into protoAgent.
 ---
 
 # Claude Bridge — exploring Claude Code state
@@ -25,6 +25,25 @@ character replaced by `-`. Pass plain directory paths — the tools handle slugs
 - `claude_scratchpad(directory[, session_id[, path]])` — list → files → read.
 - `claude_cowork([session_id[, path]])` — list sessions → metadata/outputs/audit → read a file.
 - `claude_inventory([project_dir])` — skills, subagents, commands, plugins, MCP servers (secret values redacted), hooks; project-level too when a dir is given.
+
+## Importing (v0.2)
+
+All import tools are **dry-run by default** — show the operator the dry run,
+get approval, then re-run with `apply=True`. Existing material is never
+overwritten; re-imports skip and report.
+
+- `claude_import_scan([project_dir])` — inventory everything importable first.
+- `claude_import_skills(names, source)` — source: `user`, `cowork`, or a project dir.
+- `claude_import_commands(names[, project_dir])` — become `/slash` skills.
+- `claude_import_subagents(names[, project_dir])` — live after the next config reload.
+- `claude_import_mcp(names[, project_dir])` — merges into `mcp.servers` by name.
+- `claude_import_memory(directory)` — knowledge domain `claude-import`; undo with `knowledge_purge('claude-import')`.
+- `claude_hooks_report([project_dir])` — hooks are REPORT-ONLY (protoAgent's equivalent is middleware, never auto-ported).
+
+**License rule (never bend it):** Anthropic-authored skills (Cowork's
+`creatorType: anthropic`, or Anthropic license text in the skill dir) are
+refused by the importer and must stay refused — their license prohibits
+redistribution. Only user-authored material migrates.
 
 ## Caveats
 
