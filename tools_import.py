@@ -286,17 +286,20 @@ def build_import_tools(cfg: dict) -> list:
             return f"error: {exc}"
 
     @tool
-    async def claude_import_memory(directory: str, apply: bool = False, limit: int = 100) -> str:
+    async def claude_import_memory(directory: str, apply: bool = False, limit: int = 0) -> str:
         """Ingest a directory's Claude Code project memory into this agent's
         knowledge graph (domain 'claude-import', provenance-tagged; undo with
         knowledge_purge('claude-import')). Dry-run by default lists the topic
-        files and sizes.
+        files and sizes. `limit` 0 (the default) imports EVERY topic; a positive
+        value caps it (a large project memory can hold 100+ topics).
         """
         try:
             found = stores.find_project(directory)
             if not found or not (found[1] / "memory").is_dir():
                 return f"no Claude Code memory for {directory!r}"
-            chunks = tr.memory_chunks(found[1] / "memory")[: max(1, int(limit))]
+            chunks = tr.memory_chunks(found[1] / "memory")
+            if int(limit) > 0:
+                chunks = chunks[: int(limit)]
             if not chunks:
                 return "memory directory is empty"
             if not apply:
@@ -307,6 +310,41 @@ def build_import_tools(cfg: dict) -> list:
                 )
             added, problems = await importer.ingest_memory(chunks, source_label=f"claude-code {directory}")
             out = f"ingested {added}/{len(chunks)} memory topics into domain 'claude-import'"
+            if problems:
+                out += "\nproblems:\n" + "\n".join(f"- {p}" for p in problems[:10])
+            return out
+        except Exception as exc:  # noqa: BLE001
+            return f"error: {exc}"
+
+    @tool
+    async def claude_import_claude_md(directory: str, apply: bool = False) -> str:
+        """Ingest a repo's CLAUDE.md — its *operating instructions* (run commands,
+        pre-PR gates, the gotchas that recur) — into this agent's knowledge graph
+        (domain 'claude-import', undo with knowledge_purge('claude-import')), so the
+        agent can recall how the repo wants to be worked. Dry-run by default.
+
+        CLAUDE.md lives at the repo root (not under ~/.claude). It's *instructions*,
+        not a persona: this lands it in knowledge (retrievable). If you want it always
+        in context, promote the translated text into the agent's SOUL.md yourself.
+        """
+        try:
+            claude_md = Path(directory).expanduser() / "CLAUDE.md"
+            if not claude_md.is_file():
+                return f"no CLAUDE.md in {directory!r}"
+            content = claude_md.read_text(encoding="utf-8", errors="replace").strip()
+            if not content:
+                return "CLAUDE.md is empty"
+            heading = f"Operating instructions (CLAUDE.md) — {Path(directory).expanduser().name}"
+            if not apply:
+                return (
+                    f"DRY RUN — CLAUDE.md ({len(content)} chars) would be ingested into knowledge "
+                    f"domain 'claude-import' as {heading!r} (re-run with apply=True after the "
+                    f"operator approves)."
+                )
+            added, problems = await importer.ingest_memory(
+                [(heading, content)], source_label=f"claude-code CLAUDE.md {directory}"
+            )
+            out = "ingested CLAUDE.md into domain 'claude-import'" if added else "nothing ingested"
             if problems:
                 out += "\nproblems:\n" + "\n".join(f"- {p}" for p in problems[:10])
             return out
@@ -350,5 +388,6 @@ def build_import_tools(cfg: dict) -> list:
         claude_import_subagents,
         claude_import_mcp,
         claude_import_memory,
+        claude_import_claude_md,
         claude_hooks_report,
     ]

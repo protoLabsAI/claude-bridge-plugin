@@ -17,6 +17,7 @@ EXPECTED_TOOLS = {
     "claude_import_subagents",
     "claude_import_mcp",
     "claude_import_memory",
+    "claude_import_claude_md",
     "claude_hooks_report",
 }
 
