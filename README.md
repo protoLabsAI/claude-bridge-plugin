@@ -17,7 +17,7 @@ accumulated state.
 | Scratchpads | `/private/tmp/claude-<uid>` | per-session working files (ephemeral, wiped on reboot) |
 | Cowork | `~/Library/Application Support/Claude/local-agent-mode-sessions` | desktop local-agent-mode sessions: metadata, `outputs/`, `uploads/`, `audit.jsonl` (transcripts stay in the sandbox VM) |
 
-## Import tools (v0.2 — translators)
+## Import tools (v0.2+ — translators)
 
 All importers are **dry-run by default** (`apply=True` writes, after the
 operator approves); existing material is never overwritten, and re-imports
@@ -28,7 +28,8 @@ skip + report.
 - `claude_import_commands` — slash commands → `user_facing`/`slash` skills
 - `claude_import_subagents` — subagent markdown → `SubagentConfig` (tools mapped, unmapped flagged; model inherited)
 - `claude_import_mcp` — `mcpServers` configs → `mcp.servers` (replace-by-name merge)
-- `claude_import_memory` — project memory → knowledge domain `claude-import` (undo: `knowledge_purge('claude-import')`)
+- `claude_import_memory` — project memory → knowledge domain `claude-import` (undo: `knowledge_purge('claude-import')`). `limit=0` (default) imports **every** topic; a large project memory can hold 100+.
+- `claude_import_claude_md` — a repo's `CLAUDE.md` (its *operating instructions* — run commands, gates, gotchas) → knowledge domain `claude-import`, so the agent can recall how the repo wants to be worked. It's instructions, not a persona — promote it into `SOUL.md` yourself if you want it always in context.
 - `claude_hooks_report` — hooks are **report-only** (protoAgent's equivalent is middleware)
 
 **License rule:** Anthropic-authored skills (Cowork `creatorType: anthropic`,
@@ -55,8 +56,12 @@ names only.
   standard), slash commands → `user_facing`/`slash` skills, MCP servers →
   `mcp.servers` via `apply_settings`, subagent markdown → `SubagentConfig`;
   hooks report-only (protoAgent's equivalent is middleware, not a hook table).
+- v0.3 — `claude_import_claude_md` (repo operating instructions → knowledge), and
+  `claude_import_memory` now imports **all** topics by default (the old `limit=100`
+  capped large project memories).
 - Later — console rail view for browsing memory; export a translated bundle as
-  a standalone plugin repo.
+  a standalone plugin repo; a `SOUL.md`-addendum mode for CLAUDE.md (always-in-context
+  instead of retrievable).
 
 ## Install
 

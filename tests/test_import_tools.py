@@ -132,6 +132,34 @@ async def test_memory_import_ingests_with_provenance(import_tools, fake_host):
     assert domain == "claude-import" and "imported from claude-code" in content
 
 
+async def test_claude_md_import_ingests_operating_instructions(import_tools, fake_host, tmp_path):
+    # CLAUDE.md lives at the REPO root (a real file), not under ~/.claude — read from tmp_path.
+    (tmp_path / "CLAUDE.md").write_text(
+        "# CLAUDE.md\n\nRun `python -m server`. Pre-PR gate: `ruff check .`.", encoding="utf-8"
+    )
+    d = str(tmp_path)
+    dry = await import_tools["claude_import_claude_md"].ainvoke({"directory": d})
+    assert "DRY RUN" in dry and "CLAUDE.md" in dry
+    out = await import_tools["claude_import_claude_md"].ainvoke({"directory": d, "apply": True})
+    assert "ingested CLAUDE.md" in out
+    domain, heading, content = fake_host["chunks"][0]
+    assert domain == "claude-import"
+    assert "Operating instructions" in heading
+    assert "python -m server" in content and "imported from claude-code CLAUDE.md" in content
+
+
+async def test_claude_md_missing_is_a_clean_noop(import_tools, fake_host, tmp_path):
+    out = await import_tools["claude_import_claude_md"].ainvoke({"directory": str(tmp_path)})
+    assert "no CLAUDE.md" in out
+    assert not fake_host.get("chunks")
+
+
+async def test_memory_import_default_limit_is_unbounded(import_tools, fake_host):
+    # Default limit 0 imports every topic (regression: the old default capped at 100).
+    out = await import_tools["claude_import_memory"].ainvoke({"directory": PROJECT_DIR, "apply": True})
+    assert "ingested 1/1" in out  # the fixture memory has 1 topic; none dropped by a cap
+
+
 def test_hooks_are_report_only(import_tools):
     out = import_tools["claude_hooks_report"].invoke({})
     assert "PreToolUse" in out and "NOT translated" in out
