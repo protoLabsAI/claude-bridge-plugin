@@ -36,6 +36,18 @@ skip + report.
 or Anthropic license text in the skill dir) are always refused — their license
 prohibits redistribution. Only user-authored material migrates.
 
+**Fence rule (v0.4.1+):** every read stays inside its declared store
+(`~/.claude`, the Cowork root, or the project directory you pass) and under
+`max_read_bytes` (64 KiB default). A skill, command, or subagent that is a
+**symlink pointing outside the store** — e.g. `~/.claude/skills/foo →
+~/dev/my-skills/foo` — is refused, never followed, and named in the
+scan/import output as `REFUSED (outside declared root)`. To migrate it, copy
+the directory into the store (or point `claude_bridge.cli_root` at a root
+that contains it). Oversized files are refused per item, with the rest of
+the import continuing. Exported snapshots carry MCP config *keys* only —
+URL credentials, env/header values, and stdio args are stripped and listed
+for the operator to re-supply.
+
 ## Tools (v0.1 — explore, read-only)
 
 - `claude_projects` — list projects or resolve a directory to its project
