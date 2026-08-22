@@ -18,6 +18,9 @@ from pathlib import Path
 
 import yaml
 
+from .boundaries import ReadLimitExceeded, complete_bytes, complete_text
+from .stores import FencedRoot
+
 # Agent Skills spec (agentskills.io/specification): 1-64 chars, lowercase
 # alphanumerics + hyphens, no leading/trailing/consecutive hyphens, name == dir.
 SPEC_NAME_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
@@ -72,7 +75,7 @@ def provenance(source: str) -> dict:
     }
 
 
-def is_anthropic_material(skill_dir: Path, meta: dict) -> bool:
+def is_anthropic_material(skill_dir: Path, meta: dict, max_bytes: int = 65536) -> bool:
     """True when a skill directory is Anthropic-authored/licensed material.
 
     Checks the frontmatter ``license``, any bundled LICENSE/NOTICE file, and is
@@ -81,14 +84,18 @@ def is_anthropic_material(skill_dir: Path, meta: dict) -> bool:
     lic = str(meta.get("license", ""))
     if "anthropic" in lic.lower():
         return True
+    fence = FencedRoot("skill", skill_dir)
     for candidate in ("LICENSE.txt", "LICENSE", "LICENSE.md", "NOTICE"):
-        f = skill_dir / candidate
-        if f.is_file():
+        if (skill_dir / candidate).is_file():
             try:
-                head = f.read_text(encoding="utf-8", errors="replace")[:2000]
-            except OSError:
-                return True  # unreadable license = do not import
-            if "anthropic" in head.lower():
+                inspected, preview_truncated = fence.read_text(candidate, min(max_bytes, 2000))
+                if preview_truncated and max_bytes > 2000:
+                    inspected, over_limit = fence.read_text(candidate, max_bytes)
+                else:
+                    over_limit = preview_truncated
+            except (OSError, ValueError):
+                return True  # unreadable or escaped license = do not import
+            if over_limit or "anthropic" in inspected.lower():
                 return True
     return False
 
@@ -119,18 +126,27 @@ def _normalized_meta(name: str, description: str, source: str, extra: dict | Non
     return meta
 
 
-def translate_skill_dir(src: Path, source: str = "claude-code") -> TranslatedSkill | None:
+def translate_skill_dir(src: Path, source: str = "claude-code", max_bytes: int = 65536) -> TranslatedSkill | None:
     """A Claude Code skill directory → a protoAgent skill directory.
 
     Near 1:1 (same open SKILL.md standard). Normalizations: spec-slugged name
     (must equal the target dir), description capped at 1024, ``allowed-tools``
     string → advisory ``tools`` list (mapped where a counterpart exists),
     provenance metadata. Returns None for Anthropic-licensed material."""
+    if src.is_symlink():
+        return None
+    fence = FencedRoot("skill", src)
     skill_md = src / "SKILL.md"
     if not skill_md.is_file():
         return None
-    meta, body = parse_frontmatter(skill_md.read_text(encoding="utf-8", errors="replace"))
-    if is_anthropic_material(src, meta):
+    try:
+        skill_text = complete_text(fence, "SKILL.md", max_bytes)
+    except ReadLimitExceeded:
+        raise
+    except (OSError, ValueError):
+        return None
+    meta, body = parse_frontmatter(skill_text)
+    if is_anthropic_material(src, meta, max_bytes):
         return None
 
     out = TranslatedSkill(name=slugify_name(meta.get("name") or src.name))
@@ -163,16 +179,22 @@ def translate_skill_dir(src: Path, source: str = "claude-code") -> TranslatedSki
     for p in sorted(src.rglob("*")):
         rel = p.relative_to(src)
         if p.is_file() and str(rel) != "SKILL.md":
-            out.files[str(rel)] = p.read_bytes()
+            try:
+                content = complete_bytes(fence, str(rel), max_bytes)
+            except ReadLimitExceeded:
+                raise
+            except (OSError, ValueError):
+                continue
+            out.files[str(rel)] = content
     return out
 
 
-def translate_command_md(path: Path, source: str = "claude-code") -> TranslatedSkill:
+def translate_command_md(path: Path, source: str = "claude-code", max_bytes: int = 65536) -> TranslatedSkill:
     """A Claude Code slash command (``.claude/commands/<name>.md``) → a
     protoAgent user-facing slash skill (``user_facing: true`` + ``slash:``,
     ADR 0052). The body carries over verbatim; ``$ARGUMENTS`` semantics are
     documented in a translator note so the prompt still reads correctly."""
-    meta, body = parse_frontmatter(path.read_text(encoding="utf-8", errors="replace"))
+    meta, body = parse_frontmatter(complete_text(FencedRoot("document", path.parent), path.name, max_bytes))
     out = TranslatedSkill(name=slugify_name(path.stem), user_facing=True, slash=slugify_name(path.stem))
     desc = str(meta.get("description") or "").strip()
     if not desc:
@@ -205,13 +227,13 @@ class TranslatedSubagent:
     warnings: list[str] = field(default_factory=list)
 
 
-def translate_subagent_md(path: Path) -> TranslatedSubagent:
+def translate_subagent_md(path: Path, max_bytes: int = 65536) -> TranslatedSubagent:
     """A Claude Code subagent (``.claude/agents/<name>.md``) → the fields of a
     protoAgent ``SubagentConfig``. Tool names map through TOOL_MAP (unmapped →
     flagged, never guessed); the model is recorded but left blank so the
     subagent inherits the instance's aux/main model (gateway aliases differ
     per instance)."""
-    meta, body = parse_frontmatter(path.read_text(encoding="utf-8", errors="replace"))
+    meta, body = parse_frontmatter(complete_text(FencedRoot("document", path.parent), path.name, max_bytes))
     out = TranslatedSubagent(
         name=slugify_name(meta.get("name") or path.stem),
         description=str(meta.get("description") or "").strip()[:DESCRIPTION_MAX]
@@ -273,15 +295,23 @@ def translate_mcp_servers(cc_servers: dict) -> tuple[list[dict], list[str]]:
     return entries, warnings
 
 
-def memory_chunks(memory_dir: Path) -> list[tuple[str, str]]:
+def memory_chunks(memory_dir: Path, max_bytes: int = 65536, problems: list[str] | None = None) -> list[tuple[str, str]]:
     """A Claude Code project memory dir → (heading, content) chunks for
     knowledge ingestion. One chunk per topic file; MEMORY.md (the index) is
     derivative and skipped. Frontmatter is folded into the heading."""
     chunks: list[tuple[str, str]] = []
+    fence = FencedRoot("memory", memory_dir)
     for f in sorted(memory_dir.glob("*.md")):
         if f.name == "MEMORY.md":
             continue
-        meta, body = parse_frontmatter(f.read_text(encoding="utf-8", errors="replace"))
+        try:
+            text = complete_text(fence, f.name, max_bytes)
+        except (OSError, ValueError) as exc:
+            if problems is None:
+                raise
+            problems.append(f"{f.name}: REFUSED ({exc})")
+            continue
+        meta, body = parse_frontmatter(text)
         heading = str(meta.get("description") or meta.get("name") or f.stem)
         content = body.strip()
         if content:

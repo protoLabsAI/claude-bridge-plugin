@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import secrets
+from pathlib import Path
+
 from tests.conftest import COWORK_SESSION, PROJECT_DIR, SECRET, SESSION, SLUG
 
 
@@ -76,18 +79,86 @@ def test_inventory_lists_and_redacts_secrets(tools):
     assert SECRET not in out, "MCP env values must never be echoed"
 
 
+def test_inventory_honors_configured_read_cap_for_settings(fake_home):
+    from claude_bridge.explore import build_explore_tools
+
+    marker = secrets.token_urlsafe(24)
+    settings = Path(fake_home["cli_root"]) / "settings.json"
+    settings.write_text('{"model": "' + marker + '"}')
+    capped = dict(fake_home, max_read_bytes=16)
+    inventory = {tool.name: tool for tool in build_explore_tools(capped)}["claude_inventory"]
+
+    out = inventory.invoke({})
+
+    assert marker not in out
+    assert "truncated" in out
+
+
+def test_inventory_refuses_symlinked_skill_escape(tools, tmp_path):
+    marker = secrets.token_urlsafe(24)
+    project = tmp_path / "project"
+    skills = project / ".claude" / "skills"
+    outside = tmp_path / "outside-skill"
+    skills.mkdir(parents=True)
+    outside.mkdir()
+    (outside / "SKILL.md").write_text(f"---\nname: outside\ndescription: {marker}\n---\n\nOutside.\n")
+    (skills / "linked").symlink_to(outside, target_is_directory=True)
+
+    out = tools["claude_inventory"].invoke({"project_dir": str(project)})
+
+    assert marker not in out
+    assert "outside" not in out
+
+
+def test_inventory_reports_symlinked_user_skills_root(fake_home, tmp_path):
+    from claude_bridge.explore import build_explore_tools
+
+    skills = Path(fake_home["cli_root"]) / "skills"
+    skills.rename(Path(fake_home["cli_root"]) / "skills-original")
+    outside = tmp_path / "outside-skills"
+    outside.mkdir()
+    skills.symlink_to(outside, target_is_directory=True)
+    inventory = {tool.name: tool for tool in build_explore_tools(fake_home)}["claude_inventory"]
+
+    out = inventory.invoke({})
+
+    assert "user skills" in out
+    assert "outside declared root" in out
+
+
 def test_inventory_project_level(tools, tmp_path):
+    marker = secrets.token_urlsafe(24)
     proj = tmp_path / "someproj"
     (proj / ".claude" / "agents").mkdir(parents=True)
     (proj / ".claude" / "agents" / "local.md").write_text(
         "---\nname: local\ndescription: Project-scoped agent.\n---\n\nPrompt.\n"
     )
     (proj / ".claude" / "settings.json").write_text('{"hooks": {"PreToolUse": []}}')
-    (proj / ".mcp.json").write_text('{"mcpServers": {"docs": {"url": "https://x.test/mcp?key=abc"}}}')
+    (proj / ".mcp.json").write_text(
+        '{"mcpServers": {"docs": {"url": '
+        f'"https://person:{marker}@x.test/mcp?opaque={marker}#fragment-{marker}"'
+        "}}}"
+    )
     (proj / "CLAUDE.md").write_text("# My project\n")
 
     out = tools["claude_inventory"].invoke({"project_dir": str(proj)})
     assert "local" in out
     assert "PreToolUse" in out
-    assert "docs" in out and "key=abc" not in out, "URL query strings are stripped"
+    assert "docs" in out and marker not in out
+    assert "url=https://x.test/mcp" in out
     assert "CLAUDE.md: present" in out
+
+
+def test_inventory_accepts_relative_project_dir_without_losing_user_sections(tools, tmp_path, monkeypatch):
+    proj = tmp_path / "relative-project"
+    (proj / ".claude" / "agents").mkdir(parents=True)
+    (proj / ".claude" / "agents" / "local.md").write_text(
+        "---\nname: local\ndescription: Relative project agent.\n---\n\nPrompt.\n"
+    )
+    monkeypatch.chdir(proj)
+
+    out = tools["claude_inventory"].invoke({"project_dir": "."})
+
+    assert not out.startswith("error:")
+    assert "demo-skill" in out
+    assert "local" in out
